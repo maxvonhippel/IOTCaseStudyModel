@@ -16,16 +16,16 @@ enum Mode 		{ TP34_TRIGGER_MODE, OTHER_MODES }
 enum Alert		{ USER_ALERTED, USER_NOT_ALERTED }
 
 abstract sig Environment {
-	light 		: one  Light,
-	lockContact : one  Contact,
+	light 			: one  Light,
+	lockContact 	: one  Contact,
 	/* This (below) is one we alert for, but don't consider a
 	 * security threat */
-	notSecureLock34 : one Lock, 
-	switch 		: one  Switch,
-	lock 		: one  Lock,
-	presense    : one  Presense,
-	motion      : one  Motion,
-	prior 		: lone Environment
+	notSecureLock34 : one  Lock, 
+	switch 			: one  Switch,
+	lock 			: one  Lock,
+	presense    	: one  Presense,
+	motion      	: one  Motion,
+	prior 			: lone Environment
 } {
 	this != prior
 }
@@ -62,7 +62,7 @@ abstract sig Cyber {
 	lock_C 				  : one  Lock,
 	presense_C    		  : one  Presense,
 	motion_C      		  : one  Motion,
-	prior 				  : lone Environment
+	prior 				  : lone Cyber
 } {
 	this != prior
 }
@@ -160,7 +160,7 @@ pred TP9_Case2[C1, C2 : Cyber] {
 pred TP9_Case3[C1, C2 : Cyber] {
 	(C1.timer9 = END_TIME and
 	C1.lockContact_C in NULL_CONTACT + CONTACT and
-	C1.autoLock34 = TRUE = TRUE)
+	C1.autoLock34 = TRUE)
 	implies (
 		(C2.lock_C = LOCKED and 
 		 C2.timer9 = TIMER_OFF) 
@@ -183,8 +183,8 @@ pred TP9_Transition[C1, C2 : Cyber] {
 
 pred TP34_Case1[C1, C2 : Cyber] {
 	(C1.allOk34 = TRUE and
-	C1.timeToCheckVacation != NULL_TIME and
-	C1.timeToCheckVacation != START_TIME and
+	C1.timeToCheckVacation34 != NULL_TIME and
+	C1.timeToCheckVacation34 != START_TIME and
 	C1.checkDoor34 = TIMER_OFF)
 		implies C2.checkDoor34 = START_TIME
 }
@@ -210,7 +210,7 @@ pred TP34_Case4[C1, C2 : Cyber] {
 	implies C2.alertUser34 = USER_ALERTED
 }
 
-pred TP34_Case4[C1, C2 : Cyber] {
+pred TP34_Case5[C1, C2 : Cyber] {
 	(C1.checkDoor34 = END_TIME and
 	(C1.lockContact_C = NO_CONTACT or
 	C1.lock_C = UNLOCKED))
@@ -221,7 +221,7 @@ pred TP34_Case4[C1, C2 : Cyber] {
 		C2.alertUser34 = USER_ALERTED)
 }
 
-pred TP34_Case5[C1, C2 : Cyber] {
+pred TP34_Case6[C1, C2 : Cyber] {
 	(C1.checkDoor34 = END_TIME and
 	C1.lockContact_C = NO_CONTACT and
 	C1.lock_C = UNLOCKED and
@@ -229,32 +229,32 @@ pred TP34_Case5[C1, C2 : Cyber] {
 		implies C2.warnUser34 = USER_ALERTED
 }
 
-pred TP34_Case5[C1, C2 : Cyber] {
+pred TP34_Case7[C1, C2 : Cyber] {
 	(C1.checkDoor34 = END_TIME and
 	C1.lockContact_C = CONTACT and
 	C1.lock_C = LOCKED and
 	C1.notSecureLock34_C = LOCKED)
-		iff C2.allOk34 = USER_ALERTED
+		iff C2.confirmAllOk34 = USER_ALERTED
 }
 
-pred TP34_Case6[C1, C2 : Cyber] {
+pred TP34_Case8[C1, C2 : Cyber] {
 	(C1.lockAllDoors34 = TRUE and
 	C1.allOk34 = TRUE and
 	C1.autoLock34 = TRUE) implies
 		(C2.lock_C = LOCKED and
-		 TP34_Case6_Notifications[C1, C2] and
-		 TP34_Case6_SMS[C1, C2])
+		 TP34_Case8_Notifications[C1, C2] and
+		 TP34_Case8_SMS[C1, C2])
 
 }
 
-pred TP34_Case6_Notifications[C1, C2: Cyber] {
+pred TP34_Case8_Notifications[C1, C2: Cyber] {
 	(C1.pushNotifications34 = TRUE and
 	 (C1.somePhoneNumber34 = FALSE or
 	 C1.pushAndPhone34 = TRUE)) implies
 		C2.confirmAllOk34 = USER_ALERTED
 }
 
-pred TP34_Case6_SMS[C1, C2 : Cyber] {
+pred TP34_Case8_SMS[C1, C2 : Cyber] {
 	(C1.pushNotifications34 = TRUE and
 	C1.somePhoneNumber34 = TRUE) implies
 		C2.confirmAllOk34 = USER_ALERTED
@@ -283,24 +283,25 @@ pred TP34_Transition[C1, C2 : Cyber] {
 	TP34_Case3[C1, C2] and
 	TP34_Case4[C1, C2] and
 	TP34_Case5[C1, C2] and
-	TP34_Case6[C1, C2]
+	TP34_Case6[C1, C2] and
+	TP34_Case7[C1, C2] and
+	TP34_Case8[C1, C2]
 }
 
 /**************** GLOBAL MODEL OF HACKING *********************/
-abstract sig State {
-	physical : one Environment,
-	cyber 	 : one Cyber
-} {
-	some cyber.prior 
-	implies Cyber_Transition[cyber.prior, cyber]
-}
-
 pred Cyber_Transition[C1, C2 : Cyber] {
 	TP26_Transition[C1, C2] 		and
 	TP3_dot_4_Transition[C1, C2] 	and
 	TP30_dot_2_Transition[C1, C2] 	and
 	TP9_Transition[C1, C2] 			and
 	TP34_Transition[C1, C2]
+}
+
+abstract sig State {
+	physical : one Environment,
+	cyber 	 : one Cyber
+} {
+	some cyber.prior implies Cyber_Transition[cyber.prior, cyber]
 }
 
 /***************** FALSE DATA INJECTION ATTACKS ***************/
