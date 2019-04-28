@@ -3,7 +3,7 @@ module caseStudy
  * Author: Max von Hippel
  * First authored: 11 April 2019 
  * Last updated: 12 April 2019 */
-enum Light 		{ VERY_DARK, DARK, MEDIUM, LIGHT, VERY_LIGHT }
+enum Light 		{ VERY_DARK, DARK, MEDIUM, LIGHT, VERY_LIGHT, NULL_LIGHT }
 enum Bool 		{ TRUE, FALSE }
 enum Timer 		{ TIMER_OFF, START_TIME, MID_TIME, END_TIME, NULL_TIME }
 enum Contact 	{ CONTACT, NO_CONTACT, NULL_CONTACT }
@@ -14,6 +14,17 @@ enum Motion 	{ SOME_MOTION, NO_MOTION }
 enum Retries 	{ ZERO, ONE, TWO, THREE, END }
 enum Mode 		{ TP34_TRIGGER_MODE, OTHER_MODES }
 enum Alert		{ USER_ALERTED, USER_NOT_ALERTED }
+
+// This might be an over-constraint, but it's fine so long as we still 
+// find counter-examples.
+pred TimersTick[T1, T2 : Timer] {
+	(T1 = TIMER_OFF + END_TIME + NULL_TIME 
+		implies 
+		T2 in TIMER_OFF + NULL_TIME + START_TIME) and
+	(T1 in START_TIME + MID_TIME 
+		implies 
+		T2 = T1.next)
+}
 
 abstract sig Environment {
 	light 			: one  Light,
@@ -27,22 +38,22 @@ abstract sig Environment {
 	motion      	: one  Motion,
 	prior 			: lone Environment
 } {
-	this != prior
+	light != NULL_LIGHT
 }
 
 abstract sig Cyber {
 	/******* Configuration Variables *******/
-	timer26 	 		  : one Timer,
-	timer30dot2  		  : one Timer,
-	timer9       		  : one Timer,
+	timer26 	 		  : one Timer,			// tick
+	timer30dot2  		  : one Timer,			// tick
+	timer9       		  : one Timer,			// tick
 	lightSensor  		  : one Bool,
 	lockIfClosed9 		  : one Bool,
 	retries9     		  : one Retries,
 	mode         		  : one Mode,
 	allOk34      		  : one Bool,
-	timeToCheckVacation34 : one Timer,
-	checkDoor34			  : one Timer,
-	falseAlarmThreshold34 : one Timer,
+	timeToCheckVacation34 : one Timer,			// tick
+	checkDoor34			  : one Timer,			// tick
+	falseAlarmThreshold34 : one Timer,			// tick
 	alertUser34			  : one Alert,
 	autoLock34 			  : one Bool,
 	warnUser34 			  : one Alert,
@@ -57,14 +68,24 @@ abstract sig Cyber {
 	/******* Sensor Variables *******/
 	light_C 			  : one  Light,
 	lockContact_C 		  : one  Contact,
-	notSecureLock34_C 	  : one Lock, 
+	notSecureLock34_C 	  : one  Lock, 
 	switch_C 			  : one  Switch,
 	lock_C 				  : one  Lock,
 	presense_C    		  : one  Presense,
 	motion_C      		  : one  Motion,
 	prior 				  : lone Cyber
 } {
-	this != prior
+	(lightSensor = FALSE implies light_C = NULL_LIGHT)
+	and
+	// timers tick
+	some prior implies (
+		TimersTick[prior.@timer26, timer26] and
+		TimersTick[prior.@timer30dot2, timer30dot2] and
+		TimersTick[prior.@timer9, timer9] and
+		TimersTick[prior.@timeToCheckVacation34, timeToCheckVacation34] and
+		TimersTick[prior.@checkDoor34, checkDoor34] and
+		TimersTick[prior.@falseAlarmThreshold34, falseAlarmThreshold34]
+		)
 }
 
 /*********************** TP26 ***************************
@@ -299,33 +320,63 @@ pred Cyber_Transition[C1, C2 : Cyber] {
 
 abstract sig State {
 	physical : one Environment,
-	cyber 	 : one Cyber
+	cyber 	 : one Cyber,
+	prior    : lone State
 } {
-	some cyber.prior implies Cyber_Transition[cyber.prior, cyber]
+	// All transitions at the cyber-level are legal
+	(some cyber.prior implies Cyber_Transition[cyber.prior, cyber]) 
+	and
+	// No cyber.prior <=> no physical.prior, as unified State
+	((no cyber.prior) iff (no physical.prior))
+	and
+	// All initial states are safe
+	((no prior) implies (physical.lock = LOCKED or 
+						 physical.presense = PRESENT))
+	and
+	// Priors work how we expect
+	(some prior iff
+		(some prior.physical and
+		 some prior.cyber and
+		 prior.physical = physical.prior and
+		 prior.cyber = cyber.prior))
+	and
+	(no prior implies
+		(no physical.prior and
+		 no cyber.prior))
+	and
+	// Always have a start state! Bounded verification by 3.
+	(no prior or
+	 no prior.@prior or
+	 no prior.@prior.@prior or
+	 no prior.@prior.@prior.@prior)
+	and
+	// Just to be sure 
+	(some physical.prior implies some prior) and
+	(some cyber.prior implies some prior)
 }
 
 /***************** FALSE DATA INJECTION ATTACKS ***************/
 // FDIA = False Data Injection Attack
 pred FDIA_light[E : Environment, C : Cyber] 
-{	E.light != C.light_C	}
+{	E.light != C.light_C and C.light_C = VERY_LIGHT	}
 
 pred FDIA_lockContact[E : Environment, C : Cyber] 
-{	E.lockContact != C.lockContact_C	}
+{	E.lockContact != C.lockContact_C and C.lockContact_C = CONTACT }
 
 pred FDIA_notSecureLock34[E : Environment, C : Cyber] 
-{	E.notSecureLock34 != C.notSecureLock34_C	}
+{	E.notSecureLock34 != C.notSecureLock34_C and C.notSecureLock34_C = LOCKED	}
 
 pred FDIA_switch[E : Environment, C : Cyber] 
-{	E.switch != C.switch_C	}
+{	E.switch != C.switch_C and C.switch_C = ON	}
 
 pred FDIA_lock[E : Environment, C : Cyber] 
-{	E.lock != C.lock_C 	}
+{	E.lock != C.lock_C and C.lock_C = LOCKED }
 
 pred FDIA_presense[E : Environment, C : Cyber] 
-{	E.presense != C.presense_C	}
+{	E.presense != C.presense_C and C.presense_C = PRESENT }
 
 pred FDIA_motion[E : Environment, C : Cyber] 
-{	E.motion != C.motion_C 	}
+{	E.motion != C.motion_C and C.motion_C = SOME_MOTION }
 
 // True iff a false data injection attack is performed against only
 // one device.  Includes what I'm calling FDIC on lock which is
@@ -375,4 +426,77 @@ pred FDIA_degree1[E : Environment, C : Cyber] {
 		FDIA_lock[E, C]		 		or FDIA_presense[E, C])) 
 }
 
+pred NoFDIA[E : Environment, C : Cyber] {
+	not (FDIA_motion[E, C] 			or
+		 FDIA_light[E, C]  			or
+		 FDIA_lockContact[E, C] 	or
+		 FDIA_notSecureLock34[E, C] or
+		 FDIA_switch[E, C] 			or
+		 FDIA_lock[E, C]			or
+		 FDIA_presense[E, C])
+}
+
 /***************** SECURITY ASSERTIONS ***************/
+
+/* Over a single time-step, in the absense of presense, 
+ * a locked door will not become unlocked. */
+pred StaticEnvironmentPreservesLock[S : State] {
+	(some S.physical.prior and
+	 S.prior.physical.presense = NOT_PRESENT and
+	 S.prior.physical.lock = LOCKED) implies S.physical.lock = LOCKED
+}
+
+fact GoodStates {
+	all S : State |
+		(no S.prior implies S.physical.lock = LOCKED)
+}
+
+/* If the door is unlocked for more than two time-steps, 
+ * the user will be notified. */
+pred UnlockedImpliesNotification[S : State] {
+	(no S.prior) or
+	(no S.prior.prior) or
+
+	(
+		S.prior.prior.physical.lock = LOCKED and
+		S.prior.physical.lock = UNLOCKED
+
+		implies (
+
+			((S.cyber.alertUser34 = USER_ALERTED or
+			 S.cyber.warnUser34 = USER_ALERTED) and
+			S.cyber.confirmAllOk34 = USER_NOT_ALERTED) 
+
+			or
+			
+			(((S.cyber.prior.alertUser34 = USER_ALERTED or
+			 S.cyber.prior.warnUser34 = USER_ALERTED) and
+			S.cyber.prior.confirmAllOk34 = USER_NOT_ALERTED))
+
+			or
+
+			(((S.cyber.prior.prior.alertUser34 = USER_ALERTED or
+			 S.cyber.prior.prior.warnUser34 = USER_ALERTED) and
+			S.cyber.prior.prior.confirmAllOk34 = USER_NOT_ALERTED))
+		)
+	)
+
+}
+
+fact NoFDIA {
+	all S : State | NoFDIA[S.physical, S.cyber]
+}
+
+pred A_and_B[S1, S2 : State] {
+	UnlockedImpliesNotification[S1] and StaticEnvironmentPreservesLock[S2]
+	and
+	UnlockedImpliesNotification[S2] and StaticEnvironmentPreservesLock[S1]
+}
+
+assert satisfyAll {
+	all S : State | 
+		(A_and_B[S, S] and
+		 (some S.prior implies A_and_B[S, S.prior]))
+}
+
+check satisfyAll for 4 State, 4 Environment, 4 Cyber
